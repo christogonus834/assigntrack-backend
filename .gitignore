@@ -1,0 +1,32 @@
+# ── Environment Variables (NEVER push this) ──
+.env
+.env.local
+.env.production
+
+# ── Node Modules ──
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Logs ──
+logs/
+*.log
+
+# ── OS Files ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor Files ──
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── Build/Cache ──
+dist/
+.cache/
+.temp/
