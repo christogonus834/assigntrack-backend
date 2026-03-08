@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: assigntrack-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 5000
+# ```
+
+# ---
+
+### Step 5 — Sign up on Render
+
+# Go to **[render.com](https://render.com)** → Sign up with GitHub
+
+# ---
+
+### Step 6 — Create Web Service on Render
+
+# 1. Click **New → Web Service**
+# 2. Connect your **assigntrack-backend** GitHub repo
+# 3. Fill in these settings:
+# ```
+# Name:         assigntrack-api
+# Environment:  Node
+# Build Command: npm install
+# Start Command: node server.js
+# ```
+
+# 4. Click **Advanced → Add Environment Variables** and add all your `.env` values:
+# ```
+# PORT               = 5000
+# MONGO_URI          = mongodb+srv://assigntask:Manager2016@assigntask.lheelcw.mongodb.net/assigntrack?retryWrites=true&w=majority&appName=assignTask
+# JWT_SECRET         = mysecretkey123
+# EMAIL_USER         = christogonusibeh@gmail.com
+# EMAIL_PASS         = avczwdknhjzdrsod
+# EMAIL_FROM         = christogonusibeh@gmail.com
+# ```
+
+# 5. Click **Create Web Service**
+# 6. Wait 2-3 minutes — Render will give you a URL like:
+# ```
+# https://assigntrack-api.onrender.com
