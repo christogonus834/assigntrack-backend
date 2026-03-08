@@ -13,9 +13,10 @@ app.use(cors({
   origin: [
     'http://localhost:5500',
     'http://127.0.0.1:5500',
-    'http://localhost:5173',
     'https://assign.epaybillz.com.ng',
-    'https://www.assign.epaybillz.com.ng'
+    'https://www.assign.epaybillz.com.ng',
+    'https://blog.epaybillz.com.ng',        // ← ADD THIS
+    'https://www.blog.epaybillz.com.ng'     // ← ADD THIS
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
