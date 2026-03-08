@@ -126,4 +126,9 @@ router.put('/change-password', auth, async (req, res) => {
   }
 });
 
+// Ping route to keep server warm
+router.get('/ping', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 module.exports = router;
