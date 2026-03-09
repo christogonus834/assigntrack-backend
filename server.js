@@ -15,8 +15,8 @@ app.use(cors({
     'http://127.0.0.1:5500',
     'https://assign.epaybillz.com.ng',
     'https://www.assign.epaybillz.com.ng',
-    'https://blog.epaybillz.com.ng',        // ← ADD THIS
-    'https://www.blog.epaybillz.com.ng'     // ← ADD THIS
+    'https://blog.epaybillz.com.ng',
+    'https://www.blog.epaybillz.com.ng'
   ],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
