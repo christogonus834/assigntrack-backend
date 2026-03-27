@@ -15,9 +15,9 @@ const transporter = nodemailer.createTransport({
 // Verify email connection on startup
 transporter.verify((error) => {
   if (error) {
-    console.error('❌ Email setup error:', error.message);
+    console.error(' Email setup error:', error.message);
   } else {
-    console.log('✅ Email service ready (Gmail)');
+    console.log(' Email service ready (Gmail)');
   }
 });
 

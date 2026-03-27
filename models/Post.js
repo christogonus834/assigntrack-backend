@@ -15,6 +15,7 @@ const postSchema = new mongoose.Schema({
       'EPAYBILLZ News',
       'Tech & Apps',
       'Sports',
+      'music & entertainment',
       'How to Make Money Online'
     ]
   },

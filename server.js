@@ -8,7 +8,7 @@ require('./utils/reminderJob');
 
 const app = express();
 
-// ← Replace your old cors() with this
+
 app.use(cors({
   origin: [
     'http://localhost:5500',
@@ -27,16 +27,17 @@ app.use(express.json());
 app.use('/api/auth',        require('./routes/auth'));
 app.use('/api/assignments', require('./routes/assignments'));
 app.use('/api/admin',       require('./routes/admin'));
-app.use('/api/posts',       require('./routes/posts'));  // ← NEW
+app.use('/api/posts',       require('./routes/posts'));  
+app.use('/api/assigned-tasks', require('./routes/assignedTasks'));
 
 
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
-    console.log('✅ MongoDB Connected');
+    console.log(' MongoDB Connected');
     app.listen(process.env.PORT, () => {
-      console.log(`🚀 Server running on port ${process.env.PORT}`);
+      console.log(` Server running on port ${process.env.PORT}`);
     });
   })
-  .catch(err => console.error('❌ MongoDB error:', err.message));
+  .catch(err => console.error(' MongoDB error:', err.message));
 
