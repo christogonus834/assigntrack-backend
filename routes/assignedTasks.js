@@ -4,6 +4,7 @@ const AssignedTask = require('../models/AssignedTask');
 const User         = require('../models/User');
 const auth         = require('../middleware/auth');
 const nodemailer   = require('nodemailer');
+const termii       = require('../utils/termii');
 
 const CAN_ASSIGN_TO = {
   'Regional Manager':   'Area Manager',
@@ -17,56 +18,45 @@ async function sendAssignmentEmail(toEmail, toName, fromName, fromRank, task) {
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST || 'smtp-relay.brevo.com',
       port: parseInt(process.env.EMAIL_PORT) || 587,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
     });
     await transporter.sendMail({
       from:    '"AssignTrack" <' + process.env.EMAIL_FROM + '>',
       to:      toEmail,
-      subject: 'New Task Assigned: "' + task.title + '"',
+      subject: '📋 New Task Assigned: "' + task.title + '"',
       html:
         '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8faff;padding:24px;border-radius:12px;">' +
-          '<h2 style="color:#3b82f6;">New Task Assigned to You</h2>' +
+          '<h2 style="color:#3b82f6;">📋 New Task Assigned to You</h2>' +
           '<p>Hi <strong>' + toName + '</strong>,</p>' +
           '<p><strong>' + fromName + '</strong> (' + fromRank + ') has assigned you a new task:</p>' +
           '<div style="background:#fff;border-left:4px solid #3b82f6;padding:16px;border-radius:8px;margin:16px 0;">' +
-            '<h3 style="margin:0 0 8px;color:#1e293b;">' + task.title + '</h3>' +
+            '<h3 style="margin:0 0 8px;">' + task.title + '</h3>' +
             (task.description ? '<p style="color:#64748b;margin:0 0 8px;">' + task.description + '</p>' : '') +
-            '<p style="margin:0;color:#64748b;"><strong>Due Date:</strong> ' + new Date(task.dueDate).toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' }) + '</p>' +
+            '<p style="margin:0;color:#64748b;"><strong>Due:</strong> ' + new Date(task.dueDate).toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '</p>' +
             '<p style="margin:8px 0 0;color:#64748b;"><strong>Priority:</strong> ' + task.priority + '</p>' +
           '</div>' +
-          '<a href="https://www.assign.epaybillz.com.ng/pages/dashboard.html" style="background:#3b82f6;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;margin:8px 0;">View Dashboard</a>' +
+          '<a href="https://www.assign.epaybillz.com.ng/pages/dashboard.html" style="background:#3b82f6;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">View Dashboard →</a>' +
           '<p style="color:#94a3b8;font-size:0.85rem;margin-top:24px;">AssignTrack — Built by Drix Tech</p>' +
         '</div>'
     });
   } catch (err) {
-    console.error('Email send error:', err.message);
+    console.error('Email error:', err.message);
   }
 }
 
-// ── GET subordinates I can assign to ──
+// ── GET subordinates ──
 router.get('/subordinates', auth, async (req, res) => {
   try {
     const me = await User.findById(req.user.id);
-
     if (me.isAdmin) {
-      const users = await User.find({
-        profession: { $in: ['EPAYBILLZ Agent', 'Coordinator'] }
-      }).select('name email profession rank organization');
+      const users = await User.find({ profession: { $in: ['EPAYBILLZ Agent', 'Coordinator'] } })
+        .select('name email profession rank organization');
       return res.json(users);
     }
-
     const targetRank = CAN_ASSIGN_TO[me.rank];
     if (!targetRank) return res.json([]);
-
-    const users = await User.find({
-      profession:   'Chicken Republic',
-      rank:         targetRank,
-      organization: me.organization
-    }).select('name email profession rank organization');
-
+    const users = await User.find({ profession:'Chicken Republic', rank:targetRank, organization:me.organization })
+      .select('name email profession rank organization');
     res.json(users);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -77,20 +67,18 @@ router.get('/subordinates', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { assignedTo, title, description, dueDate, priority } = req.body;
-
     if (!assignedTo || !title || !dueDate) {
       return res.status(400).json({ message: 'assignedTo, title and dueDate are required.' });
     }
 
     const me     = await User.findById(req.user.id);
     const target = await User.findById(assignedTo);
-
     if (!target) return res.status(404).json({ message: 'User not found.' });
 
     if (!me.isAdmin) {
       const targetRank = CAN_ASSIGN_TO[me.rank];
       if (!targetRank || target.rank !== targetRank) {
-        return res.status(403).json({ message: 'You can only assign tasks to ' + (targetRank || 'no one') + '.' });
+        return res.status(403).json({ message: 'You can only assign tasks to ' + (targetRank||'no one') + '.' });
       }
     }
 
@@ -108,7 +96,11 @@ router.post('/', auth, async (req, res) => {
       organization: me.organization || ''
     });
 
-    await sendAssignmentEmail(target.email, target.name, me.name, me.rank || me.profession, task);
+    // Send Email notification
+    await sendAssignmentEmail(target.email, target.name, me.name, me.rank||me.profession, task);
+
+    // Send SMS + WhatsApp notification
+    await termii.sendTaskAssignedNotification(target, task, me.name, me.rank||me.profession);
 
     res.status(201).json(task);
   } catch (err) {
@@ -126,7 +118,7 @@ router.get('/tome', auth, async (req, res) => {
   }
 });
 
-// ── GET tasks I assigned to others ──
+// ── GET tasks I assigned ──
 router.get('/byme', auth, async (req, res) => {
   try {
     const tasks = await AssignedTask.find({ assignedBy: req.user.id }).sort({ createdAt: -1 });
@@ -136,16 +128,15 @@ router.get('/byme', auth, async (req, res) => {
   }
 });
 
-// ── PATCH mark complete (only assigner) ──
+// ── PATCH complete (only assigner) ──
 router.patch('/:id/complete', auth, async (req, res) => {
   try {
     const task = await AssignedTask.findById(req.params.id);
     if (!task) return res.status(404).json({ message: 'Task not found.' });
     if (task.assignedBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only the person who assigned this task can mark it complete.' });
+      return res.status(403).json({ message: 'Only the assigner can mark this complete.' });
     }
-    task.completed   = true;
-    task.completedAt = new Date();
+    task.completed = true; task.completedAt = new Date();
     await task.save();
     res.json(task);
   } catch (err) {
@@ -153,16 +144,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
   }
 });
 
-// ── PATCH mark incomplete (only assigner) ──
+// ── PATCH uncomplete ──
 router.patch('/:id/uncomplete', auth, async (req, res) => {
   try {
     const task = await AssignedTask.findById(req.params.id);
     if (!task) return res.status(404).json({ message: 'Task not found.' });
     if (task.assignedBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only the person who assigned this task can update it.' });
+      return res.status(403).json({ message: 'Only the assigner can update this.' });
     }
-    task.completed   = false;
-    task.completedAt = null;
+    task.completed = false; task.completedAt = null;
     await task.save();
     res.json(task);
   } catch (err) {
@@ -170,13 +160,13 @@ router.patch('/:id/uncomplete', auth, async (req, res) => {
   }
 });
 
-// ── DELETE assigned task (only assigner) ──
+// ── DELETE ──
 router.delete('/:id', auth, async (req, res) => {
   try {
     const task = await AssignedTask.findById(req.params.id);
     if (!task) return res.status(404).json({ message: 'Task not found.' });
     if (task.assignedBy.toString() !== req.user.id) {
-      return res.status(403).json({ message: 'Only the person who assigned this task can delete it.' });
+      return res.status(403).json({ message: 'Only the assigner can delete this.' });
     }
     await AssignedTask.findByIdAndDelete(req.params.id);
     res.json({ message: 'Task deleted.' });

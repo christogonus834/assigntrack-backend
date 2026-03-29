@@ -31,12 +31,13 @@ app.use('/api/admin',          require('./routes/admin'));
 app.use('/api/posts',          require('./routes/posts'));
 app.use('/api/assigned-tasks', require('./routes/assignedTasks'));
 app.use('/api/chat',           require('./routes/chat'));
+app.use('/api/payment',        require('./routes/payment'));
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB Connected');
     app.listen(process.env.PORT || 5000, () => {
-      console.log(`🚀 Server running on port ${process.env.PORT || 5000}`);
+      console.log('🚀 Server running on port ' + (process.env.PORT || 5000));
     });
   })
   .catch(err => console.error('❌ MongoDB error:', err.message));
