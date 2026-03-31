@@ -19,45 +19,78 @@ cloudinary.config({
 const picStorage = new CloudinaryStorage({
   cloudinary,
   params: {
-    folder:           'assigntrack-profiles',
-    allowed_formats:  ['jpg','jpeg','png','webp'],
-    transformation:   [{ width:200, height:200, crop:'fill', gravity:'face' }]
+    folder:          'assigntrack-profiles',
+    allowed_formats: ['jpg','jpeg','png','webp'],
+    transformation:  [{ width:200, height:200, crop:'fill', gravity:'face' }]
   }
 });
 const uploadPic = multer({ storage: picStorage });
+
+// ── Who can approve whom ──
+const APPROVAL_CHAIN = {
+  'Regional Manager':              'admin',
+  'Area Manager':                  'Regional Manager',
+  'Restaurant Manager':            'Area Manager',
+  'Assistant Restaurant Manager':  'Restaurant Manager'
+};
 
 // ── Register ──
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, phone, profession, rank, organization } = req.body;
+
     if (!name || !email || !password || !profession) {
       return res.status(400).json({ message: 'All fields are required.' });
     }
+
     const existing = await User.findOne({ email });
     if (existing) return res.status(400).json({ message: 'Email already registered.' });
 
     const hashed = await bcrypt.hash(password, 10);
-    const user   = await User.create({
+
+    // For Chicken Republic — rank starts as PENDING, needs approval
+    let userRank       = '';
+    let rankStatus     = 'none';
+    let requestedRank  = '';
+
+    if (profession === 'Chicken Republic' && rank) {
+      userRank      = '';           // No active rank yet
+      rankStatus    = 'pending';    // Awaiting approval
+      requestedRank = rank;         // What they requested
+    }
+
+    const user = await User.create({
       name, email,
       password:     hashed,
       phone:        phone || '',
       profession,
-      rank:         profession === 'Chicken Republic' ? (rank||'') : '',
+      rank:         userRank,
+      rankStatus,
+      requestedRank,
       organization: profession === 'Chicken Republic' ? (organization||'') : ''
     });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
     res.status(201).json({
       token,
       user: {
-        id: user._id, name: user.name, email: user.email,
-        phone: user.phone, profession: user.profession,
-        rank: user.rank, organization: user.organization,
-        isAdmin: user.isAdmin,
-        subscriptionPlan: user.subscriptionPlan,
+        id:             user._id,
+        name:           user.name,
+        email:          user.email,
+        phone:          user.phone,
+        profession:     user.profession,
+        rank:           user.rank,
+        rankStatus:     user.rankStatus,
+        requestedRank:  user.requestedRank,
+        organization:   user.organization,
+        isAdmin:        user.isAdmin,
+        profilePic:     user.profilePic,
+        subscriptionPlan:   user.subscriptionPlan,
         subscriptionExpiry: user.subscriptionExpiry
       }
     });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -76,17 +109,26 @@ router.post('/login', async (req, res) => {
     if (!match) return res.status(400).json({ message: 'Invalid email or password.' });
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
     res.json({
       token,
       user: {
-        id: user._id, name: user.name, email: user.email,
-        phone: user.phone, profession: user.profession,
-        rank: user.rank, organization: user.organization,
-        isAdmin: user.isAdmin, profilePic: user.profilePic || '',
+        id:             user._id,
+        name:           user.name,
+        email:          user.email,
+        phone:          user.phone,
+        profession:     user.profession,
+        rank:           user.rank,
+        rankStatus:     user.rankStatus,
+        requestedRank:  user.requestedRank,
+        organization:   user.organization,
+        isAdmin:        user.isAdmin,
+        profilePic:     user.profilePic || '',
         subscriptionPlan:   user.subscriptionPlan,
         subscriptionExpiry: user.subscriptionExpiry
       }
     });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -125,7 +167,10 @@ router.post('/profile-pic', auth, uploadPic.single('profilePic'), async (req, re
       { profilePic: req.file.path },
       { new: true }
     ).select('-password');
-    res.json({ profilePic: user.profilePic });
+    res.json({
+      profilePic: user.profilePic,
+      message: 'Profile picture updated successfully.'
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -146,35 +191,96 @@ router.put('/change-password', auth, async (req, res) => {
   }
 });
 
-// ── PATCH Grant Rank ──
-router.patch('/grant-rank/:userId', auth, async (req, res) => {
+// ── GET pending rank approvals (for managers to see who needs approval) ──
+router.get('/pending-approvals', auth, async (req, res) => {
   try {
-    const { rank } = req.body;
-    const me       = await User.findById(req.user.id);
-    const target   = await User.findById(req.params.userId);
-    if (!target) return res.status(404).json({ message: 'User not found.' });
+    const me = await User.findById(req.user.id);
 
-    const RANK_GRANTS = {
-      'Regional Manager':   'Area Manager',
-      'Area Manager':       'Restaurant Manager',
-      'Restaurant Manager': 'Assistant Restaurant Manager'
-    };
+    let query = { profession: 'Chicken Republic', rankStatus: 'pending' };
 
     if (me.isAdmin) {
-      if (rank !== 'Regional Manager') {
-        return res.status(403).json({ message: 'As admin you can only grant Regional Manager rank.' });
-      }
+      // Admin sees only pending Regional Managers
+      query.requestedRank = 'Regional Manager';
+    } else if (me.rank === 'Regional Manager') {
+      // Regional Manager sees pending Area Managers in same org
+      query.requestedRank  = 'Area Manager';
+      query.organization   = me.organization;
+    } else if (me.rank === 'Area Manager') {
+      // Area Manager sees pending Restaurant Managers in same org
+      query.requestedRank  = 'Restaurant Manager';
+      query.organization   = me.organization;
+    } else if (me.rank === 'Restaurant Manager') {
+      // Restaurant Manager sees pending Assistants in same org
+      query.requestedRank  = 'Assistant Restaurant Manager';
+      query.organization   = me.organization;
     } else {
-      const allowed = RANK_GRANTS[me.rank];
-      if (!allowed || rank !== allowed) {
-        return res.status(403).json({ message: 'You can only grant the rank of ' + (allowed||'no one') + '.' });
-      }
+      return res.json([]); // No approvals for others
     }
 
-    target.rank      = rank;
-    target.grantedBy = me._id;
+    const pending = await User.find(query).select('-password');
+    res.json(pending);
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ── PATCH Approve rank ──
+router.patch('/approve-rank/:userId', auth, async (req, res) => {
+  try {
+    const me     = await User.findById(req.user.id);
+    const target = await User.findById(req.params.userId);
+
+    if (!target) return res.status(404).json({ message: 'User not found.' });
+    if (target.rankStatus !== 'pending') {
+      return res.status(400).json({ message: 'No pending rank request for this user.' });
+    }
+
+    const requestedRank = target.requestedRank;
+
+    // Validate approver
+    const approverRequired = APPROVAL_CHAIN[requestedRank];
+    if (approverRequired === 'admin' && !me.isAdmin) {
+      return res.status(403).json({ message: 'Only admin can approve Regional Manager.' });
+    }
+    if (approverRequired !== 'admin' && me.rank !== approverRequired) {
+      return res.status(403).json({
+        message: 'Only a ' + approverRequired + ' can approve this rank.'
+      });
+    }
+
+    // Also check same organization (except admin)
+    if (!me.isAdmin && me.organization !== target.organization) {
+      return res.status(403).json({ message: 'User is not in your organization.' });
+    }
+
+    target.rank        = requestedRank;
+    target.rankStatus  = 'approved';
+    target.grantedBy   = me._id;
     await target.save();
-    res.json({ message: target.name + ' granted rank of ' + rank + '.', user: target });
+
+    res.json({
+      message: target.name + ' has been approved as ' + requestedRank + '.',
+      user:    target
+    });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ── PATCH Reject rank ──
+router.patch('/reject-rank/:userId', auth, async (req, res) => {
+  try {
+    const target = await User.findById(req.params.userId);
+    if (!target) return res.status(404).json({ message: 'User not found.' });
+
+    target.rankStatus     = 'rejected';
+    target.rank           = '';
+    target.requestedRank  = '';
+    await target.save();
+
+    res.json({ message: target.name + '\'s rank request has been rejected.' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

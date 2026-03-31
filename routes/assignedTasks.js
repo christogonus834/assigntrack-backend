@@ -6,6 +6,7 @@ const auth         = require('../middleware/auth');
 const nodemailer   = require('nodemailer');
 const termii       = require('../utils/termii');
 
+// ── Rank hierarchy — who assigns to whom ──
 const CAN_ASSIGN_TO = {
   'Regional Manager':   'Area Manager',
   'Area Manager':       'Restaurant Manager',
@@ -44,19 +45,36 @@ async function sendAssignmentEmail(toEmail, toName, fromName, fromRank, task) {
   }
 }
 
-// ── GET subordinates ──
+// ── GET subordinates I can assign to ──
+// STRICT: same organization only
 router.get('/subordinates', auth, async (req, res) => {
   try {
     const me = await User.findById(req.user.id);
+
+    // Super admin can assign to EPAYBILLZ Agent and Coordinator
     if (me.isAdmin) {
-      const users = await User.find({ profession: { $in: ['EPAYBILLZ Agent', 'Coordinator'] } })
-        .select('name email profession rank organization');
+      const users = await User.find({
+        profession: { $in: ['EPAYBILLZ Agent', 'Coordinator'] }
+      }).select('name email profession rank organization');
       return res.json(users);
     }
+
+    // Must have an approved rank to assign
+    if (!me.rank || me.rank === '' || me.rankStatus !== 'approved') {
+      return res.json([]);
+    }
+
     const targetRank = CAN_ASSIGN_TO[me.rank];
     if (!targetRank) return res.json([]);
-    const users = await User.find({ profession:'Chicken Republic', rank:targetRank, organization:me.organization })
-      .select('name email profession rank organization');
+
+    // STRICT: same organization AND approved rank
+    const users = await User.find({
+      profession:   'Chicken Republic',
+      rank:         targetRank,
+      rankStatus:   'approved',
+      organization: me.organization  // ← SAME BRANCH ONLY
+    }).select('name email profession rank organization');
+
     res.json(users);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -67,18 +85,47 @@ router.get('/subordinates', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { assignedTo, title, description, dueDate, priority } = req.body;
+
     if (!assignedTo || !title || !dueDate) {
       return res.status(400).json({ message: 'assignedTo, title and dueDate are required.' });
     }
 
     const me     = await User.findById(req.user.id);
     const target = await User.findById(assignedTo);
+
     if (!target) return res.status(404).json({ message: 'User not found.' });
 
+    // Validate for non-admin
     if (!me.isAdmin) {
+      // Must have approved rank
+      if (!me.rank || me.rankStatus !== 'approved') {
+        return res.status(403).json({ message: 'Your rank has not been approved yet.' });
+      }
+
       const targetRank = CAN_ASSIGN_TO[me.rank];
-      if (!targetRank || target.rank !== targetRank) {
-        return res.status(403).json({ message: 'You can only assign tasks to ' + (targetRank||'no one') + '.' });
+      if (!targetRank) {
+        return res.status(403).json({ message: 'Your rank cannot assign tasks.' });
+      }
+
+      // Must be correct rank
+      if (target.rank !== targetRank) {
+        return res.status(403).json({
+          message: 'You can only assign tasks to ' + targetRank + '.'
+        });
+      }
+
+      // Must be same organization
+      if (me.organization !== target.organization) {
+        return res.status(403).json({
+          message: 'You can only assign tasks to staff in your own branch/organization.'
+        });
+      }
+
+      // Target must have approved rank
+      if (target.rankStatus !== 'approved') {
+        return res.status(403).json({
+          message: target.name + '\'s rank has not been approved yet.'
+        });
       }
     }
 
@@ -96,11 +143,9 @@ router.post('/', auth, async (req, res) => {
       organization: me.organization || ''
     });
 
-    // Send Email notification
-    await sendAssignmentEmail(target.email, target.name, me.name, me.rank||me.profession, task);
-
-    // Send SMS + WhatsApp notification
-    await termii.sendTaskAssignedNotification(target, task, me.name, me.rank||me.profession);
+    // Notify via Email + SMS + WhatsApp
+    await sendAssignmentEmail(target.email, target.name, me.name, me.rank || me.profession, task);
+    await termii.sendTaskAssignedNotification(target, task, me.name, me.rank || me.profession);
 
     res.status(201).json(task);
   } catch (err) {
@@ -144,7 +189,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
   }
 });
 
-// ── PATCH uncomplete ──
+// ── PATCH uncomplete (only assigner) ──
 router.patch('/:id/uncomplete', auth, async (req, res) => {
   try {
     const task = await AssignedTask.findById(req.params.id);
@@ -160,7 +205,7 @@ router.patch('/:id/uncomplete', auth, async (req, res) => {
   }
 });
 
-// ── DELETE ──
+// ── DELETE (only assigner, only if not completed) ──
 router.delete('/:id', auth, async (req, res) => {
   try {
     const task = await AssignedTask.findById(req.params.id);

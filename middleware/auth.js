@@ -11,18 +11,22 @@ module.exports = async (req, res, next) => {
     const token   = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Fetch fresh user data so name is always available
+    // Always fetch fresh user from DB
     const user = await User.findById(decoded.id).select('-password');
     if (!user) return res.status(401).json({ message: 'User not found.' });
 
     req.user = {
-      id:           user._id.toString(),
-      name:         user.name,
-      email:        user.email,
-      profession:   user.profession,
-      rank:         user.rank,
-      organization: user.organization,
-      isAdmin:      user.isAdmin
+      id:            user._id.toString(),
+      name:          user.name,
+      email:         user.email,
+      phone:         user.phone,
+      profession:    user.profession,
+      rank:          user.rank,
+      rankStatus:    user.rankStatus,
+      requestedRank: user.requestedRank,
+      organization:  user.organization,
+      isAdmin:       user.isAdmin,
+      profilePic:    user.profilePic || ''
     };
 
     next();

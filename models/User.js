@@ -13,15 +13,34 @@ const userSchema = new mongoose.Schema({
     enum: ['Student','Banker','EPAYBILLZ Agent','Coordinator','Chicken Republic']
   },
 
+  // Chicken Republic rank
   rank: {
     type: String,
-    enum: ['','Regional Manager','Area Manager','Restaurant Manager','Assistant Restaurant Manager'],
+    enum: [
+      '',
+      'Pending',
+      'Regional Manager',
+      'Area Manager',
+      'Restaurant Manager',
+      'Assistant Restaurant Manager'
+    ],
     default: ''
   },
+
+  // Rank approval status
+  rankStatus: {
+    type: String,
+    enum: ['none', 'pending', 'approved', 'rejected'],
+    default: 'none'
+  },
+
+  // Requested rank (what they picked at registration)
+  requestedRank: { type: String, default: '' },
+
   organization: { type: String, default: '' },
   grantedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 
-  // ── Subscription ──
+  // Subscription
   subscriptionPlan:   { type: String, enum: ['free','pro'], default: 'free' },
   subscriptionStatus: { type: String, enum: ['free','active','expired'], default: 'free' },
   subscriptionStart:  { type: Date, default: null },
